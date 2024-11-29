@@ -3,6 +3,7 @@ library(readr)
 library(estimatr)
 library(readxl)
 pacman::p_load(latex2exp)
+pacman::p_load(estatapi)
 
 
 # 図10-11 実験系列 -------------------------------------------------------------
@@ -159,32 +160,51 @@ serialcol_table(data10_11_a)
 
 
 
+# 実証例10.3 フィリップス曲線の誤差項の系列相関 -----------------------------------------------
 
+# 1980-1994のGDPデフレータのダウンロード
+curl <- "https://www.esri.cao.go.jp/jp/sna/data/data_list/h27_retroactive/tables/def-qk_2780.csv"
+cdestfile <- "def-qk_2780.csv"
+download.file(curl, cdestfile)
 
+# データの読み込みと整形
+# 1995以降のデータは無視して推計を行う
+gdpdef_pre <- read.csv("def-qk_2780.csv", fileEncoding = "CP932")
+gdpdef_pre <- gdpdef_pre[7:66, c(1, 2)] |> 
+  rename(`時間軸（四半期）` = 四半期デフレーター季節調整系列) |> 
+  rename(value = X) |> 
+  mutate(value = as.numeric(value))
 
+year <- seq(ymd(19800101), ymd(19941001), by = "quarter")
+gdpdef <- cbind(gdpdef_pre, year) |> 
+  tibble()
 
+gdpdef <- gdpdef |> 
+  mutate(inflation = 400 * (value - lag(value))/lag(value))
 
+# GDPギャップの四半期データと内部結合し、OLS推定
+gdp_def_gap <- GDPgap_quarterly |> 
+  mutate(year = yq(...3)) |> 
+  inner_join(gdpdef, by = join_by(year)) |> 
+  select(year, "GDP_gap" = `内閣府`, inflation) |> 
+  filter(year != "1980-01-01")
+  
+model10.3 <- lm_robust(inflation ~ GDP_gap, data = gdp_def_gap,
+                       se_type = "stata")
 
+# モデル推定の誤差について系列相関を検定
+# GDPギャップの説明力が低すぎて、良い結果が得られない
+model10.3_resid <- gdp_def_gap$inflation - model10.3$fitted.values
+serialcol_table(model10.3_resid)
 
+model10.3_resid |> 
+  tibble() |> 
+  ggplot() +
+  geom_line(aes(x = 1:59, y = model10.3_resid))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+gdp_def_gap |> 
+  ggplot() +
+  geom_line(aes(x = year, y = inflation))
 
 
 
