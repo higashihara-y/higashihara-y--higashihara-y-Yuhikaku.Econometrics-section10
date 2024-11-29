@@ -162,25 +162,39 @@ serialcol_table(data10_11_a)
 
 # 実証例10.3 フィリップス曲線の誤差項の系列相関 -----------------------------------------------
 
-# 1980-1994のGDPデフレータのダウンロード
+# 内閣府サイトより1980-1994のGDPデフレータのダウンロード
 curl <- "https://www.esri.cao.go.jp/jp/sna/data/data_list/h27_retroactive/tables/def-qk_2780.csv"
 cdestfile <- "def-qk_2780.csv"
 download.file(curl, cdestfile)
 
 # データの読み込みと整形
-# 1995以降のデータは無視して推計を行う
 gdpdef_pre <- read.csv("def-qk_2780.csv", fileEncoding = "CP932")
-gdpdef_pre <- gdpdef_pre[7:66, c(1, 2)] |> 
+gdpdef_pre <- gdpdef_pre[7:62, c(1, 2)] |> 
   rename(`時間軸（四半期）` = 四半期デフレーター季節調整系列) |> 
   rename(value = X) |> 
   mutate(value = as.numeric(value))
 
-year <- seq(ymd(19800101), ymd(19941001), by = "quarter")
-gdpdef <- cbind(gdpdef_pre, year) |> 
+
+# e-Statより1994年移行のデータをダウンロードと整形
+appId <- "a23c579662946176a2d27d4f4e78bb7ce51910a0"
+gdpdef_after <- estat_getStatsData(appId = appId,
+                                   statsDataId = "0003109787")
+
+gdpdef_after <- gdpdef_after |> 
+  filter(`国内総生産_四半期デフレーター 季節調整系列` ==
+           "国内総生産(支出側)") |> 
+  select(`時間軸（四半期）` , value)
+  
+
+# 時間軸を作成し、データを結合
+year <- seq(ymd(19800101), ymd(20240701), by = "quarter")
+gdpdef <- bind_rows(gdpdef_pre, gdpdef_after) |> 
+  cbind(year) |> 
   tibble()
 
 gdpdef <- gdpdef |> 
   mutate(inflation = 400 * (value - lag(value))/lag(value))
+
 
 # GDPギャップの四半期データと内部結合し、OLS推定
 gdp_def_gap <- GDPgap_quarterly |> 
@@ -191,20 +205,13 @@ gdp_def_gap <- GDPgap_quarterly |>
   
 model10.3 <- lm_robust(inflation ~ GDP_gap, data = gdp_def_gap,
                        se_type = "stata")
+summary(model10.3)
+
 
 # モデル推定の誤差について系列相関を検定
-# GDPギャップの説明力が低すぎて、良い結果が得られない
+# いずれのラグでも、Q値が臨界値を超え、系列相関の存在が確認できる
 model10.3_resid <- gdp_def_gap$inflation - model10.3$fitted.values
 serialcol_table(model10.3_resid)
-
-model10.3_resid |> 
-  tibble() |> 
-  ggplot() +
-  geom_line(aes(x = 1:59, y = model10.3_resid))
-
-gdp_def_gap |> 
-  ggplot() +
-  geom_line(aes(x = year, y = inflation))
 
 
 
