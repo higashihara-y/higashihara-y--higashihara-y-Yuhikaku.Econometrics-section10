@@ -297,6 +297,47 @@ arima(data_10.5, order = c(1, 0, 0), method = "ML")
 
 
 
+# 10-9［実証］ ----------------------------------------------------------------
+
+# 後方移動平均、中心化移動平均を計算し、列として追加
+# sides = 1 : 後方、sides = 2 : 中心化
+MA_infl_10.9 <- gdp_def_gap |>
+  mutate(MA_lag = stats::filter(inflation, rep(1, 4) / 4, 
+                                sides = 1),
+         MA_mid = stats::filter(inflation, c(1, 2, 2, 2, 1) / 8, 
+                                sides = 2)) 
+
+# 実証例10.5の結果より、inflationの系列相関をAR(1)モデルで推定
+# 季節調整方法や有無により、推定結果が大きく異なる
+# 後方移動平均
+arima(MA_infl_10.9$MA_lag, order = c(1, 0, 0), method = "ML")
+# 中心化移動平均
+arima(MA_infl_10.9$MA_mid, order = c(1, 0, 0), method = "ML")
+# 移動平均なし
+arima(MA_infl_10.9$inflation, order = c(1, 0, 0), method = "ML")
+
+
+# フィリップス曲線のHAC標準誤差による推定
+# 後方移動平均
+model10.9_lag <- lm(MA_lag ~ GDP_gap, data = MA_infl_10.9)
+lmtest::coeftest(model10.9_lag, vcov. = sandwich::NeweyWest)
+# 中心化移動平均
+model10.9_mid <- lm(MA_mid ~ GDP_gap, data = MA_infl_10.9)
+lmtest::coeftest(model10.9_mid, vcov. = sandwich::NeweyWest)
+# 移動平均なし
+model10.9 <- lm(inflation ~ GDP_gap, data = MA_infl_10.9)
+lmtest::coeftest(model10.9, vcov. = sandwich::NeweyWest)
+
+
+
+
+
+
+
+
+
+
+
 
 
 
