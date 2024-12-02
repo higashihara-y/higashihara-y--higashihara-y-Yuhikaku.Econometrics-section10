@@ -239,6 +239,8 @@ lmtest::coefci(model10.4, vcov. = vcovHC)
 
 
 # 実証例10.5 GDPギャップのARモデルのラグ選択 ----------------------------------------------
+# 参照：ARIMAモデルについて　
+# https://www.i-juse.co.jp/statistics/jirei/sympo/10/arima-model.html
 
 data_10.5 <- GDPgap_quarterly |> 
   filter(ym(`...3`) < ym(201701)) |> 
@@ -301,6 +303,7 @@ arima(data_10.5, order = c(1, 0, 0), method = "ML")
 
 # 後方移動平均、中心化移動平均を計算し、列として追加
 # sides = 1 : 後方、sides = 2 : 中心化
+# 参照：https://tips-r.blogspot.com/2015/01/r_1.html
 MA_infl_10.9 <- gdp_def_gap |>
   mutate(MA_lag = stats::filter(inflation, rep(1, 4) / 4, 
                                 sides = 1),
