@@ -2,6 +2,8 @@ library(tidyverse)
 library(readr)
 library(estimatr)
 library(readxl)
+library(lmtest)
+library(sandwich)
 pacman::p_load(latex2exp)
 pacman::p_load(estatapi)
 
@@ -204,7 +206,7 @@ gdp_def_gap <- GDPgap_quarterly |>
   filter(year != "1980-01-01")
   
 model10.3 <- lm_robust(inflation ~ GDP_gap, data = gdp_def_gap,
-                       se_type = "stata")
+                       clusters = year, se_type = "stata")
 summary(model10.3)
 
 
@@ -212,6 +214,95 @@ summary(model10.3)
 # いずれのラグでも、Q値が臨界値を超え、系列相関の存在が確認できる
 model10.3_resid <- gdp_def_gap$inflation - model10.3$fitted.values
 serialcol_table(model10.3_resid)
+
+
+
+
+# 実証例10.4 フィリップス曲線のHAC標準誤差 ------------------------------------------------
+
+# ラグ次数の算出（推計では使用しない）
+lag = floor(4 * (model10.3$nobs / 100)^(1/3))
+
+# HAC標準誤差での推計
+# vcov=NeweyWestとvcov=vcovHACでは推計値が異なる（NeweyWestがやや小さい）
+model10.4 <- lm(inflation ~ GDP_gap, data = gdp_def_gap)
+lmtest::coeftest(model10.4, vcov. = sandwich::NeweyWest) 
+lmtest::coefci(model10.4, vcov. = sandwich::NeweyWest)
+lmtest::coeftest(model10.4, vcov. = vcovHAC) 
+lmtest::coefci(model10.4, vcov. = vcovHAC)
+
+# ホワイト標準誤差での推計
+lmtest::coeftest(model10.4, vcov. = vcovHC(model10.4, type = "HC1"))
+lmtest::coefci(model10.4, vcov. = vcovHC)
+
+
+
+
+# 実証例10.5 GDPギャップのARモデルのラグ選択 ----------------------------------------------
+
+data_10.5 <- GDPgap_quarterly |> 
+  filter(ym(`...3`) < ym(201701)) |> 
+  select(`内閣府`)
+  
+models_10.5 <- list(
+  "AR(0)" = arima(data_10.5, order = c(0, 0, 0),
+                  include.mean = FALSE, method = "ML"),
+  "AR(1)" = arima(data_10.5, order = c(1, 0, 0),
+                  include.mean = FALSE, method = "ML"),
+  "AR(2)" = arima(data_10.5, order = c(2, 0, 0),
+                  include.mean = FALSE, method = "ML"),
+  "AR(3)" = arima(data_10.5, order = c(3, 0, 0),
+                  include.mean = FALSE, method = "ML"),
+  "AR(4)" = arima(data_10.5, order = c(4, 0, 0),
+                  include.mean = FALSE, method = "ML")
+)
+
+table_10.5 <- tibble()
+round_format <- function(x, digits = 3) {
+  return(format(round(x, digits = digits), nsmall = digits))
+}
+
+for (each in models_10.5) {
+  p <- each$arma[1]
+  T <- 148 - p
+  RSS_p <- sum(each$residuals^2)
+  ln_RSS_p_div_T <- log(RSS_p / T)
+  AIC_penalty <- (p + 1) * 2 / T
+  BIC_penalty <- (p + 1) * log(T) / T
+  table_10.5 <- rbind(table_10.5,
+                      tibble(
+                        ps = as.character(p),
+                        AIC = round_format(ln_RSS_p_div_T + AIC_penalty),
+                        BIC = round_format(ln_RSS_p_div_T + BIC_penalty),
+                        RSS_p = round_format(RSS_p, 1),
+                        ln_RSS_p_div_T = round_format(ln_RSS_p_div_T),
+                        AIC_penalty = round_format(AIC_penalty),
+                        BIC_penalty = round_format(BIC_penalty)
+                      ))
+}
+
+table_10.5 <- t(table_10.5)
+
+rownames(table_10.5) <- c(
+  "$p$", "AIC", "BIC", "RSS($p$)", "ln[RSS($p$)/$T$]",
+  "AICの罰則項", "AICの罰則項")
+
+table_10.5 |> 
+  kableExtra::kable(row.names = TRUE, col.names = NULL, escape = TRUE)
+
+
+#AR(1)モデルの再推定
+arima(data_10.5, order = c(1, 0, 0), method = "ML")
+
+
+
+
+
+
+
+
+
+
 
 
 
