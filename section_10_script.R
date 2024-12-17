@@ -6,6 +6,115 @@ library(lmtest)
 library(sandwich)
 pacman::p_load(latex2exp)
 pacman::p_load(estatapi)
+pacman::p_load(tidyquant)
+
+
+
+# 図10-4 原系列と対数系列 ----------------------------------------------------------
+curl <- "https://www.esri.cao.go.jp/jp/sna/data/data_list/kakuhou/files/h10/tables/55fcm1r.xls"
+cdestfile <- "55fcm1r.xls"
+download.file(curl, cdestfile)
+
+data10_4 <- read_excel("55fcm1r.xls", sheet = "実数")
+glimpse(data10_4)
+
+data10_4 <- t(data10_4[c(6, 35), -1]) |> 
+  data.frame() |> 
+  mutate(year = as.integer(X1),
+         国内総支出 = as.numeric(X2)) |> 
+  select(year, 国内総支出)
+
+p1 <- data10_4 |> 
+  ggplot() +
+  geom_line(aes(x = year, y = 国内総支出)) +
+  labs(x = "年", y = "国内総支出 (10億円)")
+
+p2 <- data10_4 |> 
+  ggplot() +
+  geom_line(aes(x = year, y = 国内総支出)) +
+  labs(x = "年", y = "対数国内総支出 (10億円)") +
+  coord_trans(y = "log")
+
+# patchworkにより2図を並べて表示
+p1 + p2
+
+
+
+
+# 図10-6 実質GDP成長率 ----------------------------------------------------------
+data10_6 <- read_excel("Fig_1_nominalGDP_annual.xlsx")
+glimpse(data10_6)
+
+data10_6 |> 
+  mutate(
+    成長率 = 100 * (実質暦年 - lag(実質暦年)) / lag(実質暦年),
+    対数階差成長率 = 100 * (log(実質暦年) - log(lag(実質暦年)))
+  ) |> 
+  pivot_longer(cols = c("成長率", "対数階差成長率")) |> 
+  mutate(name = factor(name, levels = c("成長率", "対数階差成長率"))) |> 
+  ggplot(aes(x = ...1, y = value, colour = name, lty = name)) +
+  geom_line() +
+  scale_linetype_manual(name = element_blank(),
+                        values = c("dotted", "solid")) + 
+  scale_color_discrete(name = element_blank()) +
+  labs(x = "年", y = element_blank())
+
+
+
+
+# 図10-7 実質GDP (公表季調値) -----------------------------------------------------
+appId <- scan("e-stat_appId.txt", what = "character")
+data10_7real <- estat_getStatsData(appId = appId, 
+                                   statsDataId = "0003109766")
+data10_7real <- data10_7real |> 
+  filter(国内総生産_実質原系列 == "国内総生産(支出側)")
+
+
+data10_7seasonal <- estat_getStatsData(appId = appId,
+                                       statsDataId = "0003109750")
+data10_7seasonal <- data10_7seasonal |> 
+  filter(国内総生産_実質季節調整系列 == "国内総生産(支出側)")
+
+
+convert_time_code <- function(x) {
+  year <-  substr(x, 1, 4)
+  month_day <- case_when(
+    substr(x, 7, 10) == "0103" ~ "0101",
+    substr(x, 7, 10) == "0406" ~ "0401",
+    substr(x, 7, 10) == "0709" ~ "0701",
+    TRUE ~ "1001"
+  ) 
+  return(ymd(paste0(year, month_day)))
+}
+
+inner_join(data10_7real, data10_7seasonal, by = "time_code") |> 
+  mutate(date = convert_time_code(time_code)) |> 
+  mutate(value.y = value.y / 4) |> 
+  pivot_longer(cols = c(value.x, value.y)) |> 
+  ggplot(aes(x = date, y = value, colour = name)) +
+  geom_line() +
+  scale_color_discrete(name = element_blank(),
+                       labels = c("原系列", "季調値")) +
+  labs(x = "年", y = "実質GDP(10億円)") +
+  theme(legend.position = c(0, 1), legend.justification = c(0, 1))
+
+
+
+
+# 図10-10 完全失業率 (移動平均) -----------------------------------------------------
+
+data10_10 <- read_excel("Fig_10_unemploymentrate_monthly.xlsx")
+data10_10 <- data10_10 |> 
+  mutate(year = ym(...1),
+         完全失業率 = as.numeric(原系列))
+
+data10_10 |> 
+  ggplot(aes(x = year, y = 完全失業率)) +
+  geom_line() +
+  labs(x = "年", y = "完全失業率（％）") +
+  tidyquant::geom_ma(n = 12, lty = "solid", color = "red")
+
+
 
 
 # 図10-11 実験系列 -------------------------------------------------------------
@@ -178,7 +287,6 @@ gdpdef_pre <- gdpdef_pre[7:62, c(1, 2)] |>
 
 
 # e-Statより1994年移行のデータをダウンロードと整形
-appId <- "a23c579662946176a2d27d4f4e78bb7ce51910a0"
 gdpdef_after <- estat_getStatsData(appId = appId,
                                    statsDataId = "0003109787")
 
